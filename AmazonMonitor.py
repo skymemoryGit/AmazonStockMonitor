@@ -133,7 +133,7 @@ def save_csv(file_path, data, fieldnames):
 
 ##################################################
 # main
-
+send_telegram_message('-1002469064066', 'check')
 # Load the CSV data into 'products'
 products = load_csv("listaProdotti.csv")
 output = []  #crea una struttura dati con prodotto link, disponibita old salvata , e ris check in cui conterra la nuova disponibilta e altre info
@@ -175,7 +175,7 @@ for item in output:
                 f"   Price: {item['Check Result'][3]}"
             )
             print(message)
-            send_telegram_message(channelSupreme, message)
+            send_telegram_message(channeltelegram, message)
 
 
 
