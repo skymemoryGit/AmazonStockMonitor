@@ -4,11 +4,13 @@ import lxml
 import requests
 from bs4 import BeautifulSoup
 from gevent.time import sleep
+import csv
 
-channeltelegram="-1002213667762"
-channelSupreme='-1002207629021' #
+channeltelegram = "-1002213667762"
+channelSupreme = '-1002207629021'  #
 
-#telegram function
+
+# telegram function
 def send_telegram_message(chat_id, text):
     base_url = "https://api.telegram.org/bot8153422759:AAHKQ50YVJj0w-ufRAtksHsPlvyvQZJR9-w/sendMessage"
     parameters = {
@@ -17,6 +19,7 @@ def send_telegram_message(chat_id, text):
     }
     resp = requests.get(base_url, params=parameters)
     return resp.text
+
 
 def send_telegram_image(file, chat_id):
     base_url = "https://api.telegram.org/bot8153422759:AAFCqTnWNHvVnq-vA2jdUob31NLO3cIC6pQ/sendPhoto"
@@ -30,6 +33,7 @@ def send_telegram_image(file, chat_id):
     }
     resp = requests.get(base_url, data=parameters, files=files)
     print(resp.text)
+
 
 def carica_link_prodotti(nome_file):
     try:
@@ -65,14 +69,6 @@ def checkProdotti(link):
         if soup.find(id="productTitle"):
             name = soup.find(id="productTitle").get_text().strip()
 
-        '''
-        #soup = BeautifulSoup(get_url.text, "html.parser")  # parsing the content of page to html parser
-        sub_class = soup.find("div", {"id": "availability"})  # finding that particular div
-        if sub_class:  # above result can be none so checking if result is not none
-            print("availability : {}".format(sub_class.find("span", {
-                "class": "a-size-medium a-color-success"}).text.strip()))  # if result is not none then finding sub class which is span and getting the text of span
-        '''
-
         # Check if the "out of stock" div is present
         out_of_stock_div = soup.find("div", id="outOfStock")
         if out_of_stock_div:
@@ -94,32 +90,109 @@ def checkProdotti(link):
     return [flag, link, name, price_message]
 
 
+# Function to load and read the CSV file
+def load_csv(file_path):
+    data = []
+
+    # Open the CSV file for reading
+    with open(file_path, mode='r', newline='', encoding='utf-8') as file:
+        csv_reader = csv.reader(file)
+
+        # Skip the header row
+        header = next(csv_reader, None)
+        if not header or len(header) < 2:
+            print("Error: CSV file does not have the expected format (at least two columns).")
+            return []
+
+        # Read the rows in the CSV file
+        for row in csv_reader:
+            # Skip empty rows or rows with insufficient columns
+            if not row or len(row) < 2:
+                continue
+
+            # Extract the availability and product link from each row
+            availability = row[0].strip()
+            link = row[1].strip()
+
+            # Ensure valid data is present before adding it to the list
+            if availability and link:
+                data.append({"Old_Available": availability, "Product Link": link})
+            else:
+                print(f"Skipping invalid row: {row}")
+
+    return data
+
+
+# Save CSV data
+def save_csv(file_path, data, fieldnames):
+    with open(file_path, mode='w', encoding='utf-8', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(data)
+
+
 ##################################################
-#main
-# URL of the Amazon product page you want to monitor
-while(True):
-    lista_prodotti = carica_link_prodotti("listaProdotti.txt")
+# main
 
-    for link in lista_prodotti:
-        ris = checkProdotti(link)
+# Load the CSV data into 'products'
+products = load_csv("listaProdotti.csv")
+output = []  #crea una struttura dati con prodotto link, disponibita old salvata , e ris check in cui conterra la nuova disponibilta e altre info
+print('Checking new status of the products...\n')
+for product in products:
+    old_available = product.get('Old_Available')  # Get the 'Old_Available' value
+    print('old available statusl:',old_available)
+    product_link = product.get('Product Link')  # Get the 'Product Link' value
 
-        # Formatting the output based on product availability
-        if ris[0] == 1:
+    try:
+        # Check product availability and store results in 'ris'
+        ris = checkProdotti(product_link)
+        output.append({'Product Link': product_link, 'Old_Available': old_available, 'Check Result': ris})
+        print(ris)  # Print result for each product
+        print('------------------------------------')
+    except Exception as e:
+        print(f"Error checking product {product_link}: {e}")
+
+
+
+# Prepare data for CSV output
+updated_data = []
+
+# Process each item
+for item in output:
+    old_available = item['Old_Available']
+    new_available = item['Check Result'][0]
+    product_link = item['Product Link']
+
+    # Check if availability has changed
+    if str(old_available) != str(new_available):
+        change = f"Availability status changed for product {product_link}. Old: {old_available}, New: {new_available}"
+        print(change)
+        if(int(old_available)==-1 and int(new_available)==1): #questo e unico caso che senda un mex
+
             message = (
-                f"✅ In Stock: {ris[2]}\n"
-                f"   URL: {ris[1]}\n"
-                f"   Price: {ris[3]}"
+                f"✅ In Stock: {item['Check Result'][2]}\n"
+                f"   URL: {item['Check Result'][1]}\n"
+                f"   Price: {item['Check Result'][3]}"
             )
             print(message)
-            send_telegram_message(channeltelegram, message)
-        else:
-            message = (
-                f"❌ Out of Stock: {ris[2]}\n"
-                f"   URL: {ris[1]}"
-            )
+            send_telegram_message(channelSupreme, message)
 
-        # Sending the formatted message to the specified Telegram channel
-        #print(message)
-    #send_telegram_message(channelSupreme, "Status: on, check done")
 
-    sleep(300)
+
+
+    # Append to updated data with the new availability
+    updated_data.append({'Available': new_available, 'Product Link': product_link})
+
+# Write to CSV
+csv_file_path = 'listaProdotti.csv'
+with open(csv_file_path, mode='w', newline='', encoding='utf-8') as file:
+    writer = csv.DictWriter(file, fieldnames=['Available', 'Product Link'])
+    writer.writeheader()
+    writer.writerows(updated_data)
+
+print(f"Data saved to {csv_file_path}")
+
+
+
+
+
